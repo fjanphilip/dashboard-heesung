@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Heesung · Relay Control</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>Heesung Relay Control</h1>
+          <p>WT32-ETH01 · MQTT · 4 Channel</p>
+        </div>
+      </div>
+      <div class="badges">
+        <span class="badge" id="brokerBadge"><i class="dot"></i>Broker</span>
+        <span class="badge" id="deviceBadge"><i class="dot"></i>Device</span>
+        <span class="clock" id="clock">--:--:--</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="stats" id="stats">
+        <div class="stat">
+          <span class="stat-label">IP Device</span>
+          <strong id="statIp">—</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">MAC</span>
+          <strong id="statMac">—</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Uptime</span>
+          <strong id="statUptime">—</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Relay Aktif</span>
+          <strong id="statActive">0 / 4</strong>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="section-head">
+          <h2>Kontrol Relay</h2>
+          <span class="muted" id="lastSync">Menunggu data…</span>
+        </div>
+        <div class="relay-grid" id="relayGrid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>Aktivitas 24 Jam</h2>
+          <span class="muted">garis hijau = relay ON</span>
+        </div>
+        <div class="timeline-list" id="timelineList"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>Log Event</h2>
+          <button class="ghost" id="refreshBtn" type="button">Muat ulang</button>
+        </div>
+        <div class="table-wrap">
+          <table class="log">
+            <thead>
+              <tr><th>Waktu</th><th>Relay</th><th>Status</th></tr>
+            </thead>
+            <tbody id="logBody">
+              <tr><td colspan="3" class="empty">Belum ada event</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Heesung Prototype · <span id="footerPrefix">heesung</span></span>
+      <span id="wsStatus" class="muted">Menghubungkan…</span>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

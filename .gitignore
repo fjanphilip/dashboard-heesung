@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Dashboard local
+dashboard/.env
+dashboard/data/
+
+# Arduino IDE
+build/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
