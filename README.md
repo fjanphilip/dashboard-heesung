@@ -49,15 +49,17 @@ Prototype-heesung/
 
 | Relay | Pin WT32-ETH01 | Keterangan |
 |-------|----------------|------------|
-| IN1   | GPIO 32        | Relay 1    |
-| IN2   | GPIO 33        | Relay 2    |
-| IN3   | GPIO 25        | Relay 3    |
-| IN4   | GPIO 26        | Relay 4    |
+| IN1   | GPIO 32 (label `CFG`, header pin 5)   | Relay 1 |
+| IN2   | GPIO 33 (label `485_EN`, header pin 6) | Relay 2 |
+| IN3   | GPIO 17 (label `TXD`, header pin 8)   | Relay 3 |
+| IN4   | GPIO 4 (label `IO4`, header pin 24)   | Relay 4 |
 | GND   | GND            | GND bersama |
 | VCC   | 5V (atau supply eksternal 5V) | Sesuai modul relay |
 
-> **Penting:** GPIO `0, 16, 18, 23` dipakai internal oleh PHY Ethernet
-> (LAN8720), jangan dipakai untuk relay. Pin default bisa diubah di
+> **Penting:** ada dua pin berlabel `TXD`/`RXD` di board. Untuk relay 3 pakai
+> `TXD` di header pin **8** (GPIO17), **bukan** `TXD` di pin 14 (GPIO1) yang
+> dipakai untuk upload/Serial. GPIO 25/26 tidak tersedia di header board ini.
+> GPIO 35/36/39 hanya input. Pin default bisa diubah di
 > `firmware/WT32_Relay/config.h` (`RELAY_PINS_LIST`).
 >
 > Modul relay umumnya **aktif LOW** (default `RELAY_ACTIVE_LOW 1`). Kalau modul
@@ -88,6 +90,7 @@ pertama boot** — setelah itu bisa diubah lewat Serial tanpa upload ulang:
 #define MQTT_HOST "192.168.1.10"   // IP PC server (bukan 127.0.0.1!)
 #define MQTT_PORT 1883
 #define TOPIC_PREFIX "heesung"
+#define DEVICE_ID "ion-01"         // ID unik tiap board (lihat 2.5)
 #define RELAY_COUNT 4
 ```
 
@@ -132,11 +135,12 @@ set gw 192.168.1.1         gateway
 set mask 255.255.255.0     subnet mask
 set dns 192.168.1.1        DNS
 set prefix heesung         prefix topic
-reboot                     restart untuk menerapkan mode/IP/prefix
+set id ion-05              ID unik board (lihat 2.5)
+reboot                     restart untuk menerapkan mode/IP/prefix/id
 ```
 
 - `set server` dan `set port` **langsung diterapkan** (MQTT reconnect otomatis).
-- `set mode/ip/gw/mask/dns/prefix` disimpan ke NVS, berlaku setelah `reboot`.
+- `set mode/ip/gw/mask/dns/prefix/id` disimpan ke NVS, berlaku setelah `reboot`.
 - Semua nilai tersimpan permanen, tidak hilang saat listrik mati.
 
 **Perlu subnet yang sama?** Untuk LAN pabrik biasa: ya. WT32 dan PC server harus
@@ -147,6 +151,29 @@ PC server lewat Serial, tanpa upload ulang.
 
 > Mengubah IP PC server tidak perlu mengubah apa pun di dashboard: aplikasi
 > listen di `0.0.0.0`, jadi otomatis mengikuti IP baru PC.
+
+### 2.5 Banyak WT32 (satu per ionizer)
+
+Dashboard **tidak perlu tahu IP tiap WT32**. IP boleh DHCP dan berubah-ubah;
+yang dipakai sebagai identitas adalah **Device ID**:
+
+1. Semua board diarahkan ke server yang sama (`set server <IP PC>`).
+2. Beri tiap board ID berbeda lewat Serial lalu `reboot`:
+   ```
+   set id ion-05
+   reboot
+   ```
+3. Selesai. Saat board online, dashboard mendeteksinya otomatis dan
+   memetakannya ke **titik nomor 5** di denah (relay 1).
+
+Aturan pemetaan: ID `ion-N` (`ion-5` dan `ion-05` sama) → ionizer N. Untuk
+satu WT32 dengan modul relay 4 channel, isi `"device"` dan `"relay"` (1–4)
+pada ionizer terkait di `dashboard/app/static/ionizers.json`. Contoh saat ini:
+ionizer 1–4 memakai relay 1–4 milik `ion-01`.
+
+> **ID harus unik.** ID juga dipakai sebagai MQTT client id; dua board dengan
+> ID sama akan saling memutus koneksi. Board yang belum diberi ID memakai
+> default `ion-01` (dari `config.h`).
 
 ---
 
@@ -201,16 +228,19 @@ Konfigurasi opsional lewat `dashboard/.env` (lihat `.env.example`):
 
 | Topic | Arah | Payload | Retain |
 |-------|------|---------|--------|
-| `heesung/relay/{n}/state` | device → dashboard | `ON` / `OFF` | ya |
-| `heesung/relay/{n}/set` | dashboard → device | `ON` / `OFF` / `TOGGLE` | tidak |
-| `heesung/device/status` | device → dashboard | `online` / `offline` (LWT) | ya |
-| `heesung/device/heartbeat` | device → dashboard | JSON `{uptime_s, ip, mac, relays}` | tidak |
+| `heesung/{id}/relay/{n}/state` | device → dashboard | `ON` / `OFF` | ya |
+| `heesung/{id}/relay/{n}/set` | dashboard → device | `ON` / `OFF` / `TOGGLE` | tidak |
+| `heesung/{id}/status` | device → dashboard | `online` / `offline` (LWT) | ya |
+| `heesung/{id}/heartbeat` | device → dashboard | JSON `{id, uptime_s, ip, mac, relays}` | tidak |
 
-`{n}` = 1..4. Contoh heartbeat:
+`{id}` = Device ID board (mis. `ion-05`), `{n}` = 1..4. Contoh heartbeat:
 
 ```json
-{"uptime_s":3821,"ip":"192.168.1.50","mac":"AA:BB:CC:DD:EE:FF","relay_count":4,"relays":[true,false,false,true]}
+{"id":"ion-05","uptime_s":3821,"ip":"192.168.1.50","mac":"AA:BB:CC:DD:EE:FF","relay_count":4,"relays":[1,0,0,1]}
 ```
+
+> Firmware lama memakai topic tanpa `{id}` (`heesung/relay/1/state`). Board
+> dengan firmware lama **tidak terdeteksi** sampai di-upload ulang.
 
 Broker mendukung QoS 0/1, wildcard `+`/`#`, pesan retained, dan LWT. Retained
 disimpan di memori: setelah server restart, WT32 akan mempublikasikan ulang
@@ -222,15 +252,14 @@ state saat reconnect.
 
 | Method | Endpoint | Body | Fungsi |
 |--------|----------|------|--------|
-| GET | `/api/state` | - | Snapshot state relay + device |
-| POST | `/api/relay/{n}` | `{"state": true}` | Set relay ON/OFF |
-| POST | `/api/relay/{n}/toggle` | - | Toggle relay |
-| GET | `/api/history?hours=24&limit=500` | - | Histori event |
+| GET | `/api/state` | - | Snapshot semua device + state relay |
+| POST | `/api/devices/{id}/relay/{n}` | `{"state": true}` | Set relay ON/OFF |
+| GET | `/api/history?device=ion-05&hours=24&limit=500` | - | Histori event (`device` opsional) |
 | GET | `/healthz` | - | Status server + broker |
 | WS | `/ws` | - | Update realtime ke browser |
 
 ```bash
-curl -X POST http://localhost:8000/api/relay/1 \
+curl -X POST http://localhost:8000/api/devices/ion-05/relay/1 \
   -H "Content-Type: application/json" -d "{\"state\":true}"
 ```
 
@@ -238,11 +267,15 @@ curl -X POST http://localhost:8000/api/relay/1 \
 
 ## 6. Fitur Dashboard
 
-- Status broker & device (LWT) realtime.
-- Kartu relay dengan toggle ON/OFF dan waktu perubahan terakhir.
-- Info device: IP, MAC, uptime, jumlah relay aktif.
-- Timeline aktivitas 24 jam per relay.
-- Log event tersimpan di SQLite (`dashboard/data/heesung.db`).
+- Denah line dengan 17 titik ionizer; warna titik = status (hijau ON, merah OFF,
+  oranye offline, abu-abu belum terdeteksi).
+- Deteksi otomatis WT32 lewat Device ID (tanpa mengatur IP).
+- Kontrol ON/OFF per ionizer (tabel atau panel detail) dan **Semua ON/OFF**
+  dengan konfirmasi. Perintah dianggap berhasil hanya setelah WT32
+  mengonfirmasi; bila tidak, muncul "perangkat tidak merespons" (5 detik).
+- Panel detail: ID, IP, MAC, uptime, terakhir terlihat, riwayat 6 event.
+- Filter (Semua/ON/OFF/Offline), pencarian, ringkasan jumlah.
+- Riwayat tersimpan di SQLite (`dashboard/data/heesung.db`).
 - Reconnect otomatis WebSocket dan MQTT.
 
 ---
@@ -256,6 +289,8 @@ curl -X POST http://localhost:8000/api/relay/1 \
 | Device tidak connect MQTT (`rc=-2`) | Cek `set server` via Serial (IP LAN PC server), port 1883 terbuka di Windows Firewall, dan WT32 satu subnet dengan PC. |
 | Dashboard "Broker" merah | Pastikan `BROKER_ENABLED=1` dan `MQTT_HOST=127.0.0.1`, lihat log console. |
 | Relay tidak merespons | Cek `RELAY_ACTIVE_LOW`, wiring IN, dan VCC modul relay. |
+| Titik tetap abu-abu "Belum terdeteksi" | Firmware belum versi Device ID, atau ID board bukan `ion-N`. Cek `show` di Serial dan footer dashboard (daftar ID yang tidak terpasang). |
+| Dua titik saling bergantian offline | Dua board memakai Device ID yang sama. Beri ID berbeda (`set id`). |
 | Dashboard tidak update | Cek `/healthz`, lihat log console server. |
 
 **Windows Firewall:** saat pertama dijalankan, izinkan akses Python untuk

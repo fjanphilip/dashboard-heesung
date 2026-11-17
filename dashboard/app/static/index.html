@@ -3,85 +3,94 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Heesung · Relay Control</title>
+  <title>Heesung · Monitoring Ionizer</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <div>
-          <h1>Heesung Relay Control</h1>
-          <p>WT32-ETH01 · MQTT · 4 Channel</p>
-        </div>
+      <div>
+        <h1>Monitoring Ionizer</h1>
+        <p class="sub">LINE 1 · kontrol realtime via WT32</p>
       </div>
       <div class="badges">
         <span class="badge" id="brokerBadge"><i class="dot"></i>Broker</span>
-        <span class="badge" id="deviceBadge"><i class="dot"></i>Device</span>
+        <span class="badge" id="wsBadge"><i class="dot"></i><span id="wsText">Menghubungkan</span></span>
         <span class="clock" id="clock">--:--:--</span>
       </div>
     </header>
 
-    <main>
-      <section class="stats" id="stats">
-        <div class="stat">
-          <span class="stat-label">IP Device</span>
-          <strong id="statIp">—</strong>
-        </div>
-        <div class="stat">
-          <span class="stat-label">MAC</span>
-          <strong id="statMac">—</strong>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Uptime</span>
-          <strong id="statUptime">—</strong>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Relay Aktif</span>
-          <strong id="statActive">0 / 4</strong>
-        </div>
-      </section>
+    <section class="tiles" id="tiles">
+      <button class="tile t-all" data-filter="all" type="button"><span>Total</span><strong id="cAll">0</strong></button>
+      <button class="tile t-on" data-filter="on" type="button"><span>ON</span><strong id="cOn">0</strong></button>
+      <button class="tile t-off" data-filter="off" type="button"><span>OFF</span><strong id="cOff">0</strong></button>
+      <button class="tile t-down" data-filter="down" type="button"><span>Offline / belum terdeteksi</span><strong id="cDown">0</strong></button>
+    </section>
 
-      <section class="block">
-        <div class="section-head">
-          <h2>Kontrol Relay</h2>
-          <span class="muted" id="lastSync">Menunggu data…</span>
-        </div>
-        <div class="relay-grid" id="relayGrid"></div>
-      </section>
+    <section class="card map-card">
+      <svg id="lineMap" viewBox="0 68 1640 190" role="img" aria-label="Denah line produksi dan posisi ionizer"></svg>
+      <div class="legend">
+        <span><i class="lg on"></i>ON</span>
+        <span><i class="lg off"></i>OFF</span>
+        <span><i class="lg offline"></i>Offline</span>
+        <span><i class="lg na"></i>Belum terdeteksi</span>
+        <span class="hint">Klik titik atau baris untuk membuka panel kontrol</span>
+      </div>
+    </section>
 
-      <section class="panel">
-        <div class="section-head">
-          <h2>Aktivitas 24 Jam</h2>
-          <span class="muted">garis hijau = relay ON</span>
+    <div class="main">
+      <section class="card list-card">
+        <div class="toolbar">
+          <input id="search" class="search" type="search" placeholder="Cari ionizer atau proses…" aria-label="Cari" />
+          <div class="chips" id="chips" role="tablist">
+            <button class="chip active" data-filter="all" type="button">Semua</button>
+            <button class="chip" data-filter="on" type="button">ON</button>
+            <button class="chip" data-filter="off" type="button">OFF</button>
+            <button class="chip" data-filter="down" type="button">Offline</button>
+          </div>
+          <div class="bulk">
+            <button class="btn btn-on" id="bulkOn" type="button">Semua ON</button>
+            <button class="btn btn-off" id="bulkOff" type="button">Semua OFF</button>
+          </div>
         </div>
-        <div class="timeline-list" id="timelineList"></div>
-      </section>
 
-      <section class="panel">
-        <div class="section-head">
-          <h2>Log Event</h2>
-          <button class="ghost" id="refreshBtn" type="button">Muat ulang</button>
-        </div>
         <div class="table-wrap">
-          <table class="log">
+          <table>
             <thead>
-              <tr><th>Waktu</th><th>Relay</th><th>Status</th></tr>
+              <tr>
+                <th class="c-no">No</th>
+                <th>Ionizer</th>
+                <th>Type</th>
+                <th>Perangkat</th>
+                <th class="c-status">Status</th>
+                <th class="c-ctl">Kontrol</th>
+              </tr>
             </thead>
-            <tbody id="logBody">
-              <tr><td colspan="3" class="empty">Belum ada event</td></tr>
-            </tbody>
+            <tbody id="tableBody"></tbody>
           </table>
+          <p class="empty" id="emptyRow" hidden>Tidak ada ionizer yang cocok.</p>
         </div>
       </section>
-    </main>
+
+      <aside class="card panel" id="panel" aria-live="polite"></aside>
+    </div>
 
     <footer class="footer">
-      <span>Heesung Prototype · <span id="footerPrefix">heesung</span></span>
-      <span id="wsStatus" class="muted">Menghubungkan…</span>
+      <span id="unknownInfo" class="muted"></span>
+      <span id="deviceCount" class="muted"></span>
     </footer>
   </div>
+
+  <dialog id="confirm" class="dialog">
+    <form method="dialog">
+      <h3 id="confirmTitle"></h3>
+      <p id="confirmText"></p>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" value="cancel">Batal</button>
+        <button class="btn btn-primary" id="confirmOk" value="ok">Ya, lanjutkan</button>
+      </div>
+    </form>
+  </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/static/app.js"></script>

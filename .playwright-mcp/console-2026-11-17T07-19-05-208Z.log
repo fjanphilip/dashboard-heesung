@@ -1,0 +1,11 @@
+[   42751ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[   44462ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[   47358ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[   52280ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[   60636ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[   70641ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[   80645ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[   90653ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[  100665ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[  110675ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517
+[  120680ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8001/static/app.js:517

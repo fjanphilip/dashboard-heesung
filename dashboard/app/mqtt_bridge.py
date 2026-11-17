@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 import uuid
@@ -14,9 +15,30 @@ from .store import Store
 
 log = logging.getLogger("mqtt")
 
+DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,23}$")
+
+# Topic format lama (firmware versi satu-device) memakai segmen ini di posisi
+# device id; abaikan agar tidak muncul sebagai device palsu.
+LEGACY_SEGMENTS = {"device", "relay"}
+
+
+def _new_device(device_id: str) -> dict[str, Any]:
+    return {
+        "id": device_id,
+        "online": False,
+        "ip": None,
+        "mac": None,
+        "uptime_s": None,
+        "last_seen": None,
+        "relays": {},  # relay id -> {"state": bool, "updated_at": int}
+    }
+
 
 class MqttBridge:
-    """Subscribe to the relay topics, keep in-memory state, publish commands."""
+    """Auto-discover WT32 devices lewat MQTT, simpan state, kirim perintah.
+
+    Topic: {prefix}/{device}/status | heartbeat | relay/{n}/state | relay/{n}/set
+    """
 
     def __init__(
         self,
@@ -28,28 +50,8 @@ class MqttBridge:
         self.store = store
         self.emit = emit
         self._lock = threading.Lock()
-
-        self._device: dict[str, Any] = {
-            "online": False,
-            "ip": None,
-            "mac": None,
-            "uptime_s": None,
-            "last_seen": None,
-        }
-        self._relays: dict[int, dict[str, Any]] = {
-            i: {"state": False, "updated_at": None}
-            for i in range(1, settings.relay_count + 1)
-        }
-
-        prefix = settings.topic_prefix
-        self._set_topics = {
-            f"{prefix}/relay/{i}/set": i for i in self._relays
-        }
-        self._state_topics = {
-            f"{prefix}/relay/{i}/state": i for i in self._relays
-        }
-        self._status_topic = f"{prefix}/device/status"
-        self._heartbeat_topic = f"{prefix}/device/heartbeat"
+        self._devices: dict[str, dict[str, Any]] = {}
+        self._prefix = settings.topic_prefix
 
         self._client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
@@ -91,11 +93,11 @@ class MqttBridge:
             log.error("MQTT connect gagal: %s", reason_code)
             return
 
-        prefix = self.settings.topic_prefix
-        client.subscribe(f"{prefix}/relay/+/state", qos=1)
-        client.subscribe(self._status_topic, qos=1)
-        client.subscribe(self._heartbeat_topic, qos=1)
-        log.info("MQTT terhubung, subscribe topic %s/*", prefix)
+        p = self._prefix
+        client.subscribe(f"{p}/+/status", qos=1)
+        client.subscribe(f"{p}/+/heartbeat", qos=1)
+        client.subscribe(f"{p}/+/relay/+/state", qos=1)
+        log.info("MQTT terhubung, subscribe %s/+/*", p)
         self.emit({"type": "broker", "connected": True})
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties) -> None:
@@ -103,92 +105,125 @@ class MqttBridge:
         self.emit({"type": "broker", "connected": False})
 
     def _on_message(self, client, userdata, msg) -> None:
-        topic = msg.topic
-        payload = msg.payload.decode("utf-8", errors="replace").strip()
+        parts = msg.topic.split("/")
+        base = self._prefix.split("/")
+        if parts[: len(base)] != base:
+            return
+        rest = parts[len(base):]
+        if len(rest) < 2:
+            return
 
-        if topic in self._state_topics:
-            self._handle_relay_state(self._state_topics[topic], payload)
-        elif topic == self._status_topic:
-            self._handle_device_status(payload)
-        elif topic == self._heartbeat_topic:
-            self._handle_heartbeat(payload)
+        device_id = rest[0]
+        if device_id in LEGACY_SEGMENTS or not DEVICE_ID_RE.match(device_id):
+            return
+
+        payload = msg.payload.decode("utf-8", errors="replace").strip()
+        kind = rest[1:]
+
+        if kind == ["status"]:
+            self._handle_status(device_id, payload)
+        elif kind == ["heartbeat"]:
+            self._handle_heartbeat(device_id, payload)
+        elif len(kind) == 3 and kind[0] == "relay" and kind[2] == "state":
+            if kind[1].isdigit():
+                self._handle_relay_state(device_id, int(kind[1]), payload)
 
     # ------------------------------------------------------------------
     # Message handlers
     # ------------------------------------------------------------------
-    def _handle_relay_state(self, relay: int, payload: str) -> None:
+    def _device(self, device_id: str) -> dict[str, Any]:
+        """Ambil/buat device. Panggil hanya saat memegang self._lock."""
+        device = self._devices.get(device_id)
+        if device is None:
+            device = self._devices[device_id] = _new_device(device_id)
+            log.info("Device baru terdeteksi: %s", device_id)
+        return device
+
+    @staticmethod
+    def _public(device: dict[str, Any]) -> dict[str, Any]:
+        out = {k: v for k, v in device.items() if k != "relays"}
+        out["relays"] = [
+            {"id": rid, **info} for rid, info in sorted(device["relays"].items())
+        ]
+        return out
+
+    def _handle_relay_state(self, device_id: str, relay: int, payload: str) -> None:
+        if relay < 1 or relay > self.settings.relay_count:
+            return
+
         state = payload.upper() in ("ON", "1", "TRUE")
         now = int(time.time())
 
         with self._lock:
-            was = self._relays[relay]["state"]
-            known = self._relays[relay]["updated_at"] is not None
-            self._relays[relay] = {"state": state, "updated_at": now}
+            device = self._device(device_id)
+            previous = device["relays"].get(relay)
+            device["relays"][relay] = {"state": state, "updated_at": now}
 
-        # Retained message dikirim ulang tiap dashboard reconnect.
-        # Hanya catat ke histori jika benar-benar berubah.
-        if known and was == state:
+        # Retained message dikirim ulang tiap reconnect; catat hanya jika berubah.
+        if previous is not None and previous["state"] == state:
             return
 
-        event = self.store.record(relay, state, now)
-        log.info("Relay %d -> %s", relay, "ON" if state else "OFF")
-        self.emit({"type": "relay", "event": event})
+        event = self.store.record(device_id, relay, state, now)
+        log.info("%s relay %d -> %s", device_id, relay, "ON" if state else "OFF")
+        self.emit({"type": "relay", "device": device_id, "event": event})
 
-    def _handle_device_status(self, payload: str) -> None:
+    def _handle_status(self, device_id: str, payload: str) -> None:
         online = payload.upper() == "ONLINE"
         with self._lock:
-            self._device["online"] = online
+            device = self._device(device_id)
+            device["online"] = online
             if online:
-                self._device["last_seen"] = int(time.time())
-            device = dict(self._device)
+                device["last_seen"] = int(time.time())
+            public = self._public(device)
 
-        self.emit({"type": "device", "device": device})
+        self.emit({"type": "device", "device": public})
 
-    def _handle_heartbeat(self, payload: str) -> None:
+    def _handle_heartbeat(self, device_id: str, payload: str) -> None:
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:
-            log.warning("Heartbeat bukan JSON valid: %s", payload)
+            log.warning("Heartbeat %s bukan JSON valid: %s", device_id, payload)
             return
 
         with self._lock:
-            self._device["online"] = True
-            self._device["last_seen"] = int(time.time())
-            self._device["ip"] = data.get("ip", self._device["ip"])
-            self._device["mac"] = data.get("mac", self._device["mac"])
-            self._device["uptime_s"] = data.get("uptime_s")
-            device = dict(self._device)
+            device = self._device(device_id)
+            device["online"] = True
+            device["last_seen"] = int(time.time())
+            device["ip"] = data.get("ip", device["ip"])
+            device["mac"] = data.get("mac", device["mac"])
+            device["uptime_s"] = data.get("uptime_s")
+            public = self._public(device)
 
-        self.emit({"type": "device", "device": device})
+        self.emit({"type": "device", "device": public})
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            relays = [
-                {"id": rid, **info}
-                for rid, info in sorted(self._relays.items())
-            ]
-            device = dict(self._device)
+            devices = [self._public(d) for _, d in sorted(self._devices.items())]
 
         return {
             "type": "snapshot",
-            "relays": relays,
-            "device": device,
+            "devices": devices,
             "broker_connected": self._client.is_connected(),
             "relay_count": self.settings.relay_count,
         }
 
-    def relay_state(self, relay: int) -> bool | None:
+    def device_exists(self, device_id: str) -> bool:
         with self._lock:
-            info = self._relays.get(relay)
+            return device_id in self._devices
+
+    def relay_state(self, device_id: str, relay: int) -> bool | None:
+        with self._lock:
+            device = self._devices.get(device_id)
+            info = device["relays"].get(relay) if device else None
             return None if info is None else bool(info["state"])
 
-    def set_relay(self, relay: int, state: bool) -> bool:
-        topic = f"{self.settings.topic_prefix}/relay/{relay}/set"
-        if topic not in self._set_topics:
+    def set_relay(self, device_id: str, relay: int, state: bool) -> bool:
+        if not DEVICE_ID_RE.match(device_id):
             return False
+        topic = f"{self._prefix}/{device_id}/relay/{relay}/set"
         info = self._client.publish(
             topic, "ON" if state else "OFF", qos=0, retain=False
         )

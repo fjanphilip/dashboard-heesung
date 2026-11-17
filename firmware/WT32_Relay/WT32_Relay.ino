@@ -41,6 +41,7 @@ struct NetConfig {
   char mqttHost[64];
   uint16_t mqttPort;
   char topicPrefix[32];
+  char deviceId[24];
 };
 
 static NetConfig cfg;
@@ -75,6 +76,7 @@ static void printConfig() {
   Serial.printf("[CFG]   DNS          : %s\n", cfg.dns.toString().c_str());
   Serial.printf("[CFG]   Server MQTT  : %s:%u\n", cfg.mqttHost, cfg.mqttPort);
   Serial.printf("[CFG]   Topic prefix : %s\n", cfg.topicPrefix);
+  Serial.printf("[CFG]   Device ID    : %s\n", cfg.deviceId);
   Serial.printf("[CFG]   IP sekarang  : %s\n", ETH.localIP().toString().c_str());
 }
 
@@ -89,8 +91,9 @@ static void printHelp() {
   Serial.println("[CFG]   set mask <a.b.c.d>");
   Serial.println("[CFG]   set dns <a.b.c.d>");
   Serial.println("[CFG]   set prefix <teks>");
+  Serial.println("[CFG]   set id <teks>        ID unik board, mis. ion-05");
   Serial.println("[CFG]   reboot               restart board");
-  Serial.println("[CFG] Catatan: set mode/ip/gw/mask/dns/prefix butuh reboot.");
+  Serial.println("[CFG] Catatan: set mode/ip/gw/mask/dns/prefix/id butuh reboot.");
 }
 
 static void saveNetConfig() {
@@ -102,6 +105,24 @@ static void saveNetConfig() {
   prefsNet.putString("server", cfg.mqttHost);
   prefsNet.putUShort("port", cfg.mqttPort);
   prefsNet.putString("prefix", cfg.topicPrefix);
+  prefsNet.putString("id", cfg.deviceId);
+}
+
+// "<prefix>/<deviceId>/<suffix>" mis. heesung/ion-05/status
+static void deviceTopic(const char *suffix, char *out, size_t len) {
+  snprintf(out, len, "%s/%s/%s", cfg.topicPrefix, cfg.deviceId, suffix);
+}
+
+static bool validDeviceId(const char *id) {
+  size_t n = strlen(id);
+  if (n == 0 || n >= sizeof(cfg.deviceId)) return false;
+  for (size_t i = 0; i < n; i++) {
+    char c = id[i];
+    bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '-' || c == '_';
+    if (!ok) return false;
+  }
+  return true;
 }
 
 static void loadConfig() {
@@ -129,6 +150,10 @@ static void loadConfig() {
 
   value = prefsNet.getString("prefix", TOPIC_PREFIX);
   value.toCharArray(cfg.topicPrefix, sizeof(cfg.topicPrefix));
+
+  value = prefsNet.getString("id", DEVICE_ID);
+  value.toCharArray(cfg.deviceId, sizeof(cfg.deviceId));
+  if (!validDeviceId(cfg.deviceId)) strlcpy(cfg.deviceId, DEVICE_ID, sizeof(cfg.deviceId));
 }
 
 // ------------------------------------------------------------
@@ -136,8 +161,8 @@ static void loadConfig() {
 // ------------------------------------------------------------
 static void applyMqttServerChange() {
   if (mqtt.connected()) {
-    char statusTopic[64];
-    snprintf(statusTopic, sizeof(statusTopic), "%s/device/status", cfg.topicPrefix);
+    char statusTopic[96];
+    deviceTopic("status", statusTopic, sizeof(statusTopic));
     mqtt.publish(statusTopic, "offline", true);
     mqtt.disconnect();
   }
@@ -218,6 +243,17 @@ static void handleSet(char *key, char *value) {
     return;
   }
 
+  if (!strcasecmp(key, "id")) {
+    if (!validDeviceId(value)) {
+      Serial.println("[CFG] ID tidak valid (huruf/angka/-/_, maks 23 karakter)");
+      return;
+    }
+    strlcpy(cfg.deviceId, value, sizeof(cfg.deviceId));
+    prefsNet.putString("id", cfg.deviceId);
+    Serial.println("[CFG] ID disimpan. Ketik 'reboot' untuk menerapkan.");
+    return;
+  }
+
   Serial.println("[CFG] Key tidak dikenal. Ketik 'help'.");
 }
 
@@ -268,7 +304,8 @@ static void applyRelay(uint8_t idx) {
 }
 
 static void relayTopic(uint8_t idx, const char *suffix, char *out, size_t len) {
-  snprintf(out, len, "%s/relay/%u/%s", cfg.topicPrefix, (unsigned)(idx + 1), suffix);
+  snprintf(out, len, "%s/%s/relay/%u/%s", cfg.topicPrefix, cfg.deviceId,
+           (unsigned)(idx + 1), suffix);
 }
 
 static void publishRelayState(uint8_t idx) {
@@ -287,12 +324,12 @@ static void publishHeartbeat() {
 
   char payload[192];
   snprintf(payload, sizeof(payload),
-           "{\"uptime_s\":%lu,\"ip\":\"%s\",\"mac\":\"%s\","
+           "{\"id\":\"%s\",\"uptime_s\":%lu,\"ip\":\"%s\",\"mac\":\"%s\","
            "\"relay_count\":%u,\"relays\":[%s]}",
-           millis() / 1000UL, ETH.localIP().toString().c_str(),
+           cfg.deviceId, millis() / 1000UL, ETH.localIP().toString().c_str(),
            ETH.macAddress().c_str(), (unsigned)RELAY_COUNT, relays);
 
-  snprintf(topicBuf, sizeof(topicBuf), "%s/device/heartbeat", cfg.topicPrefix);
+  deviceTopic("heartbeat", topicBuf, sizeof(topicBuf));
   mqtt.publish(topicBuf, payload);
 }
 
@@ -346,8 +383,8 @@ static void onMqttMessage(char *topic, byte *payload, unsigned int len) {
 static void onMqttConnect() {
   Serial.printf("[MQTT] Terhubung ke %s:%u\n", cfg.mqttHost, cfg.mqttPort);
 
-  char statusTopic[64];
-  snprintf(statusTopic, sizeof(statusTopic), "%s/device/status", cfg.topicPrefix);
+  char statusTopic[96];
+  deviceTopic("status", statusTopic, sizeof(statusTopic));
   mqtt.publish(statusTopic, "online", true);
 
   for (uint8_t i = 0; i < RELAY_COUNT; i++) {
@@ -362,15 +399,19 @@ static void onMqttConnect() {
 }
 
 static void connectMqtt() {
-  char statusTopic[64];
-  snprintf(statusTopic, sizeof(statusTopic), "%s/device/status", cfg.topicPrefix);
+  char statusTopic[96];
+  deviceTopic("status", statusTopic, sizeof(statusTopic));
+
+  // Client id harus unik per board, kalau tidak broker memutus board lain.
+  char clientId[40];
+  snprintf(clientId, sizeof(clientId), "wt32-%s", cfg.deviceId);
 
   bool ok;
   if (strlen(MQTT_USER) > 0) {
-    ok = mqtt.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS,
+    ok = mqtt.connect(clientId, MQTT_USER, MQTT_PASS,
                       statusTopic, 0, true, "offline");
   } else {
-    ok = mqtt.connect(MQTT_CLIENT_ID, nullptr, nullptr,
+    ok = mqtt.connect(clientId, nullptr, nullptr,
                       statusTopic, 0, true, "offline");
   }
 
@@ -388,7 +429,7 @@ static void onNetworkEvent(WiFiEvent_t event) {
   switch (event) {
     case ARDUINO_EVENT_ETH_START:
       Serial.println("[ETH] Start");
-      ETH.setHostname(MQTT_CLIENT_ID);
+      ETH.setHostname(cfg.deviceId);
       break;
     case ARDUINO_EVENT_ETH_CONNECTED:
       Serial.println("[ETH] Link up");

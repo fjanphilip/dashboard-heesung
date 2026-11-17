@@ -1,0 +1,22 @@
+{
+  "_catatan": "Tanpa field device/relay, ionizer N otomatis memakai WT32 berID 'ion-N' relay 1. Untuk satu WT32 dengan beberapa relay, isi \"device\" dan \"relay\" (1-4) seperti ionizer 1-4 di bawah.",
+  "ionizers": [
+    { "id": 1,  "type": "BAR",           "process": "Conveyor Input Reflector Machine", "device": "ion-01", "relay": 1, "x": 92,   "y": 118 },
+    { "id": 2,  "type": "BAR",           "process": "Reflector Input M/C",              "device": "ion-01", "relay": 2, "x": 181,  "y": 158 },
+    { "id": 3,  "type": "Standard Type", "process": "Proses LINE1 - 3",                 "device": "ion-01", "relay": 3, "x": 455,  "y": 114 },
+    { "id": 4,  "type": "Standard Type", "process": "Proses LINE1 - 4",                 "device": "ion-01", "relay": 4, "x": 632,  "y": 114 },
+    { "id": 5,  "type": "Standard Type", "process": "Proses LINE1 - 5",                 "x": 574,  "y": 169 },
+    { "id": 6,  "type": "Standard Type", "process": "Proses LINE1 - 6",                 "x": 998,  "y": 111 },
+    { "id": 7,  "type": "Standard Type", "process": "Proses LINE1 - 7",                 "x": 1058, "y": 114 },
+    { "id": 8,  "type": "Standard Type", "process": "Proses LINE1 - 8",                 "x": 1258, "y": 117 },
+    { "id": 9,  "type": "Standard Type", "process": "Proses LINE1 - 9",                 "x": 1209, "y": 169 },
+    { "id": 10, "type": "Standard Type", "process": "Proses LINE1 - 10",                "x": 1154, "y": 152 },
+    { "id": 11, "type": "Standard Type", "process": "Proses LINE1 - 11",                "x": 1152, "y": 195 },
+    { "id": 12, "type": "Standard Type", "process": "Proses LINE1 - 12",                "x": 1090, "y": 152 },
+    { "id": 13, "type": "Standard Type", "process": "Proses LINE1 - 13",                "x": 1095, "y": 195 },
+    { "id": 14, "type": "Standard Type", "process": "Proses LINE1 - 14",                "x": 1438, "y": 164 },
+    { "id": 15, "type": "Standard Type", "process": "Proses LINE1 - 15",                "x": 1406, "y": 109 },
+    { "id": 16, "type": "Standard Type", "process": "Proses LINE1 - 16",                "x": 1485, "y": 112 },
+    { "id": 17, "type": "Standard Type", "process": "Proses LINE1 - 17",                "x": 1315, "y": 219 }
+  ]
+}

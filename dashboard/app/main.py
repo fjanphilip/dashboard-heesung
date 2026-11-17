@@ -122,45 +122,36 @@ def get_state() -> dict[str, Any]:
     return _require_bridge().snapshot()
 
 
-@app.post("/api/relay/{relay_id}")
-def set_relay(relay_id: int, command: RelayCommand) -> dict[str, Any]:
+def _checked_target(device_id: str, relay_id: int) -> MqttBridge:
     target = _require_bridge()
     if relay_id not in range(1, settings.relay_count + 1):
         raise HTTPException(status_code=404, detail="Relay tidak ditemukan")
+    if not target.device_exists(device_id):
+        raise HTTPException(status_code=404, detail="Perangkat belum terdeteksi")
+    return target
 
-    if not target.set_relay(relay_id, command.state):
+
+@app.post("/api/devices/{device_id}/relay/{relay_id}")
+def set_relay(device_id: str, relay_id: int, command: RelayCommand) -> dict[str, Any]:
+    target = _checked_target(device_id, relay_id)
+
+    if not target.set_relay(device_id, relay_id, command.state):
         raise HTTPException(status_code=503, detail="Broker MQTT tidak terhubung")
 
-    return {"ok": True, "relay": relay_id, "requested": command.state}
-
-
-@app.post("/api/relay/{relay_id}/toggle")
-def toggle_relay(relay_id: int) -> dict[str, Any]:
-    target = _require_bridge()
-    current = target.relay_state(relay_id)
-    if current is None:
-        raise HTTPException(status_code=404, detail="Relay tidak ditemukan")
-
-    if not target.set_relay(relay_id, not current):
-        raise HTTPException(status_code=503, detail="Broker MQTT tidak terhubung")
-
-    return {"ok": True, "relay": relay_id, "requested": not current}
+    return {"ok": True, "device": device_id, "relay": relay_id, "requested": command.state}
 
 
 @app.get("/api/history")
 def get_history(
-    relay: int | None = None,
+    device: str | None = None,
     hours: float = 24,
     limit: int = 500,
 ) -> dict[str, Any]:
-    if relay is not None and relay not in range(1, settings.relay_count + 1):
-        raise HTTPException(status_code=404, detail="Relay tidak ditemukan")
-
     limit = max(1, min(limit, 5000))
     since = int(time.time() - hours * 3600) if hours > 0 else None
 
     return {
-        "events": store.history(relay=relay, since=since, limit=limit),
+        "events": store.history(device=device, since=since, limit=limit),
         "hours": hours,
     }
 
